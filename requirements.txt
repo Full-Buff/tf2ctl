@@ -1,3 +1,3 @@
 requests>=2.32.0
-paramiko[nacl]>=3.4.0
+paramiko>=3.4.0
 cryptography>=42.0.0
