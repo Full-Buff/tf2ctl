@@ -88,37 +88,6 @@ You'll see a summary with IPs and passwords. You can also view or export connect
 
 ---
 
-## Using the CLI
-
-### Main Menu
-
-* **Configure provider / API token / SSH key**: Set your cloud provider, token, and SSH key.
-* **Create server(s) (auto-configure)**: Bulk-create and configure servers.
-* **Manage a server**: Access management options for a specific server.
-* **List your servers**: Print a list of all servers you've created.
-* **Bulk actions**: Perform an action (restart, delete, etc.) on all servers at once.
-
-### Manage Server Menu
-
-* **Show TF2 container logs (tail 200)**: View the latest server console output.
-* **Restart TF2 container**: Restarts the game server process.
-* **Run a command (SSH)**: Execute a quick shell command on the server.
-* **Re-configure**: Re-upload all resources from `server_resources/` and re-run the full setup script.
-* **Open SSH session**: Launches a new terminal with an interactive SSH session.
-* **Show connection strings**: Display Game, STV, and RCON connection info.
-* **Reapply includes (fast)**: Quickly re-copies just your `cfg/`, `maps/`, and `addons/` into the container.
-* **Delete this server**: Permanently destroys the server and removes it from the cloud provider.
-
-### Connection Strings
-
-The CLI can generate connection strings for you to copy/paste:
-
-* **Game**: `connect <ip>:27015; password "<server_password>"`
-* **STV**: `connect <ip>:27020; password "stv"`
-* **RCON**: `rcon_address <ip>:27015; rcon_password "<rcon_password>"`
-
----
-
 ## Files & Logs
 
 ### Local Files (`./tf2ctl/`)
