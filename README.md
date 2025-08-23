@@ -88,43 +88,6 @@ You'll see a summary with IPs and passwords. You can also view or export connect
 
 ---
 
-## Files & Logs
-
-### Local Files (`./tf2ctl/`)
-
-* `config.json`: Stores provider tokens & SSH key paths.
-* `servers.json`: A local registry of your servers with their IDs, IPs, and other metadata.
-* `id_ed25519` / `id_ed25519.pub`: The generated SSH keys.
-* `logs/*.log`: Per-server setup logs pulled from the remote machine.
-
-### Remote Server Files
-
-* `/root/tf2-setup.sh`: Your setup script.
-* `/root/tf2-copy.sh`: A helper script for copying includes into the container.
-* `/var/log/tf2-setup.log`: A log file tracing the setup and copy process.
-* The alias `tf2apply` is created, which points to `bash /root/tf2-copy.sh`.
-
----
-
-## Troubleshooting
-
-* **Windows "bad permissions" on SSH key**: The tool automatically hardens file permissions. If you use your own key path (e.g., under OneDrive), you may need to fix permissions manually:
-    ```powershell
-    icacls "C:\path\to\id_ed25519" /inheritance:r
-    icacls "C:\path\to\id_ed25519" /grant:r %USERNAME%:R
-    icacls "C:\path\to\id_ed25519" /remove:g Users
-    ```
-
-* **Apt lock / setup errors**: The tool waits for cloud-init to finish, but if an error occurs, you can safely re-run the process from the Manage a server menu using "Re-configure" or "Reapply includes".
-
-* **RCON/passwords not applied on first boot**: Your settings in `tf2ctl.cfg` are applied via `autoexec.cfg` after the server's own generated config. If a map or plugin pack later overwrites your values, ensure your desired values are in `tf2ctl.cfg`.
-
-* **Provider limits**:
-  - **DigitalOcean**: The tool automatically checks your droplet limit and warns you or adjusts the bulk creation amount.
-  - **Linode**: The API doesn't expose limits, so the tool proceeds but still delays 1 second between creations to avoid rate-limiting.
-
----
-
 ## Developer Notes
 
 * **Provider-agnostic design**: The core CLI calls a uniform interface. Each provider module (`do_api.py`, `linode_api.py`) simply implements the required functions:
