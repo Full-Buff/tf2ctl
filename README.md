@@ -88,29 +88,6 @@ You'll see a summary with IPs and passwords. You can also view or export connect
 
 ---
 
-## Developer Notes
-
-* **Provider-agnostic design**: The core CLI calls a uniform interface. Each provider module (`do_api.py`, `linode_api.py`) simply implements the required functions:
-    ```python
-    list_regions() -> list[dict]
-    recommended_sizes() -> dict[str, str]
-    ensure_ssh_key(pub_key: str) -> str
-    create_server(name, region, size, ssh_key_id, public_key, tags) -> dict
-    wait_for_active_ip(id) -> dict
-    delete_server(id) -> None
-    capacity_remaining() -> Optional[int]
-    ```
-
-* **Idempotency**: Both the setup and copy scripts are safe to re-run. The `tf2-copy.sh` script safely renames `server.cfg`, copies files, and only adds the exec command to `autoexec.cfg` if it's missing.
-
-* **Paths**: The tool keeps all local state in the project's `./tf2ctl/` directory and automatically normalizes Windows backslashes (`\`) to POSIX forward slashes (`/`) for remote paths.
-
-* **Bulk create pacing**: A 1-second delay is hardcoded between server creation API calls to respect provider rate limits.
-
-Contributions are welcome!
-
----
-
 ## Uninstall / Cleanup
 
 1. Delete all servers from the "Manage a server" or "Bulk actions" menus to avoid further cloud charges.
