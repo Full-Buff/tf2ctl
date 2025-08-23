@@ -21,6 +21,10 @@ TF2CTL is a cross-platform CLI tool that automates provisioning and managing **T
 ### 1. Requirements
 
 * **Python 3.11+** recommended (3.13 is OK).
+    Windows users can run this in powershell or cmd:
+    ```powershell
+    winget install -e --id Python.Python.3.11
+    ```
 * **Install dependencies** from the project root:
     ```bash
     pip install -r requirements.txt
