@@ -88,49 +88,6 @@ You'll see a summary with IPs and passwords. You can also view or export connect
 
 ---
 
-## Adding Custom Content
-
-### Generated server.cfg vs. Your Overrides
-
-The TF2 Docker image generates its own `server.cfg` from environment variables when it first launches. TF2CTL never overwrites that file. Instead, it creates a clean override system:
-
-1. If you provide a `server.cfg` in your `includes/cfg/` folder, TF2CTL renames it to `tf2ctl.cfg` on the server.
-2. It then ensures the line `exec tf2ctl.cfg` exists in `/home/tf2/server/tf/cfg/autoexec.cfg`.
-
-This ensures your custom settings are always loaded after the image's defaults, letting your values win where they overlap.
-
-> [!CAUTION]
-> **Do not include these settings in your custom server.cfg if you have one:** hostname, sv_password, rcon_password, tv_password, or map. These are automatically set during server creation.
-
-> [!NOTE]
-> I don't have all of the environment variables included in this that are support by [Melkor](https://github.com/melkortf/tf2-servers), only because this was the simplest way to get a working tool. I intend to add them in as user friendly a way as possible in the future. For now, include them in your own server.cfg under './server_resources/includes/cfg'
-
-### Maps
-
-Drop your `.bsp` map files into:
-```
-server_resources/includes/maps/
-```
-
-### Plugins (SourceMod, etc.)
-
-Place your `.smx` and related plugin files in their correct subdirectories under:
-```
-server_resources/includes/addons/
-```
-
-For example: `server_resources/includes/addons/sourcemod/plugins/myplugin.smx`
-
-### Re-applying Content
-
-You can quickly re-upload and apply your custom content without recreating the server:
-
-* **Single Server**: Manage a server → Reapply includes (fast)
-* **All Servers**: Bulk actions → Reapply includes (fast)
-* **Via SSH**: Run the alias `tf2apply` on the server.
-
----
-
 ## Using the CLI
 
 ### Main Menu
