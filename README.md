@@ -1,6 +1,7 @@
 # TF2CTL — Team Fortress 2 Server Manager (CLI)
 
 TF2CTL is a cross-platform CLI tool that automates provisioning and managing **TF2 game servers** in the cloud. It can spin up Linux VMs, install Docker, launch the TF2 container, upload your custom content (maps, configs, plugins), and give you a simple menu to manage and monitor servers.
+This is mainly geared toward competitive play, but can be easily modified as needed.
 
 ## Highlights
 
@@ -85,6 +86,10 @@ In the main menu, select "Create server(s) (auto-configure)":
    - Save all server credentials and connection info locally under `.tf2ctl/`.
 
 You'll see a summary with IPs and passwords. You can also view or export connection strings at any time from the main menu.
+
+---
+
+[Check the wiki on this repo for more info](https://github.com/Full-Buff/tf2ctl/wiki)
 
 ---
 
