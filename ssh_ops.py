@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import io
 import os
 import sys
@@ -123,7 +124,7 @@ class SSHOps:
     def _sftp_put_dir(sftp: paramiko.SFTPClient, local_dir: Path, remote_dir: str):
         # Ensure the root exists
         SSHOps._mkdir_parents(sftp, remote_dir)
-        for root, files in os.walk(local_dir):
+        for root, _, files in os.walk(local_dir):
             # rel may contain Windows backslashes; force POSIX for remote
             rel = os.path.relpath(root, str(local_dir))
             rel_posix = "." if rel == "." else rel.replace("\\", "/")
