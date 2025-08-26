@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 from datetime import datetime, UTC  # timezone-aware UTC
+from json import JSONDecodeError
 
 # Try package-relative, then local
 try:
@@ -49,9 +50,9 @@ def load_config() -> dict:
     CONFIG_DIR.mkdir(exist_ok=True)
     if CONFIG_PATH.exists():
         try:
-            return json.loads(CONFIG_PATH.read_text())
-        except Exception:
-            pass
+            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        except (OSError, JSONDecodeError) as exc:
+            print(f"(warning) could not read config: {exc}; recreating default")
     data = {
         "provider": "digitalocean",
         "do_token": "",
@@ -61,7 +62,7 @@ def load_config() -> dict:
         "ssh_private_key_path": "",
         "ssh_public_key_path": "",
     }
-    CONFIG_PATH.write_text(json.dumps(data, indent=2))
+    CONFIG_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
     return data
 
 def save_config(cfg: dict):
@@ -71,14 +72,14 @@ def save_config(cfg: dict):
 def load_registry() -> Dict[str, Any]:
     if SERVERS_REG_PATH.exists():
         try:
-            return json.loads(SERVERS_REG_PATH.read_text())
-        except Exception:
-            pass
+            return json.loads(SERVERS_REG_PATH.read_text(encoding="utf-8"))
+        except (OSError, JSONDecodeError) as exc:
+            print(f"(warning) could not read servers registry: {exc}; starting empty")
     return {}
 
 def save_registry(reg: Dict[str, Any]):
     CONFIG_DIR.mkdir(exist_ok=True)
-    SERVERS_REG_PATH.write_text(json.dumps(reg, indent=2))
+    SERVERS_REG_PATH.write_text(json.dumps(reg, indent=2), encoding="utf-8")
 
 
 # ---------------------------
@@ -105,7 +106,7 @@ def select_provider(cfg: dict) -> str:
             cfg["provider"] = keys[i]
             save_config(cfg)
             return keys[i]
-    except Exception:
+    except (ValueError, IndexError):
         pass
     print("Invalid selection; keeping current.")
     return cfg.get("provider", "digitalocean")
@@ -125,7 +126,7 @@ def build_api(cfg: dict):
     token = ensure_token_for_provider(cfg, provider)
     if provider == "digitalocean":
         return DigitalOceanAPI(token)
-    elif provider == "linode":
+    if provider == "linode":
         return LinodeAPI(token)
     else:
         raise RuntimeError(f"Unsupported provider '{provider}'")
@@ -145,8 +146,8 @@ def _harden_private_key_permissions(priv_path: Path):
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         else:
             os.chmod(priv_path, 0o600)
-    except Exception as e:
-        print(f"(warning) could not tighten key permissions: {e}")
+    except (subprocess.CalledProcessError, PermissionError, OSError) as exc:
+        print(f"(warning) could not tighten key permissions: {exc}")
 
 def _write_key_files(cfg: dict):
     """
@@ -188,8 +189,8 @@ def ensure_ssh_key(cfg: dict) -> tuple[str, str]:
     else:
         priv_path = ask("Path to your PRIVATE key (PEM/OpenSSH)")
         pub_path  = ask("Path to your PUBLIC key (.pub)")
-        priv = Path(priv_path).read_text()
-        pub  = Path(pub_path).read_text()
+        priv = Path(priv_path).read_text(encoding="utf-8")
+        pub  = Path(pub_path).read_text(encoding="utf-8")
         cfg["ssh_private_key"] = priv
         cfg["ssh_public_key"]  = pub
         save_config(cfg)
@@ -241,7 +242,7 @@ def _choose_server_by_name(reg: Dict[str, Any]) -> Optional[str]:
         idx = int(idx)
         if 1 <= idx <= len(names):
             return names[idx-1]
-    except Exception:
+    except (ValueError, IndexError):
         pass
     print("Invalid selection.")
     return None
@@ -280,6 +281,7 @@ def _build_conn_strings(ip: str, game_port: int, stv_port: int, sv_password: str
 # ---------------------------
 
 def _bulk_loop(reg: Dict[str, Any], api, cfg: dict):
+    # pylint: disable=too-many-branches,too-many-statements,too-many-locals,too-many-nested-blocks
     if not reg:
         print("No servers tracked by this tool.")
         pause()
@@ -334,15 +336,15 @@ def _bulk_loop(reg: Dict[str, Any], api, cfg: dict):
                 try:
                     api.delete_server(meta["id"])
                     print(f"Deleted {name}")
-                except Exception as e:
-                    print(f"Failed to delete {name}: {e}")
+                except (DOAPIError, LinodeAPIError) as exc:
+                    print(f"Failed to delete {name}: {exc}")
                 reg.pop(name, None)
                 meta_path = CONFIG_DIR / f"{meta.get('id','')}.json"
                 if meta_path.exists():
                     try:
                         meta_path.unlink()
-                    except Exception:
-                        pass
+                    except (OSError, PermissionError, FileNotFoundError) as exc:
+                        print(f"Failed to delete config for {name}: {exc}")
             save_registry(reg)
             pause()
 
@@ -402,9 +404,10 @@ def _bulk_loop(reg: Dict[str, Any], api, cfg: dict):
 # ---------------------------
 
 def menu():
+    # pylint: disable=too-many-branches,too-many-statements,too-many-locals,too-many-nested-blocks
     cfg = load_config()
     api = build_api(cfg)
-    ssh = SSHOps()
+    #ssh = SSHOps()
 
     while True:
         os.system("cls" if os.name == "nt" else "clear")
@@ -426,7 +429,7 @@ def menu():
             try:
                 key_id = api.ensure_ssh_key(pub)
                 print(f"SSH key registered with {SUPPORTED_PROVIDERS.get(prov)} (id: {key_id}).")
-            except Exception as e:
+            except (DOAPIError, LinodeAPIError) as e:
                 print(f"(warning) could not register SSH key with provider: {e}")
             print(f"Config stored at: {CONFIG_PATH}")
             print(f"server_resources path: {SERVER_RESOURCES_DIR}")
@@ -455,12 +458,12 @@ def menu():
             remaining = None
             try:
                 remaining = api.capacity_remaining()
-            except Exception:
+            except (DOAPIError, LinodeAPIError):
                 remaining = None
 
             if remaining is not None and count_req > remaining:
                 if remaining <= 0:
-                    print(f"\nYour account cannot create more servers right now (0 capacity remaining).")
+                    print("\nYour account cannot create more servers right now (0 capacity remaining).")
                     print("Tip: delete old instances or request a limit increase from your provider.")
                     pause()
                     continue
@@ -481,7 +484,8 @@ def menu():
             for n in names:
                 print(f"  - {n} ({region}, {size})")
             if ask("Type 'yes' to confirm", "yes").lower() != "yes":
-                pause(); continue
+                pause()
+                continue
 
             reg = load_registry()
             created = []
@@ -597,13 +601,15 @@ def menu():
             reg = load_registry()
             name = _choose_server_by_name(reg)
             if not name:
-                pause(); continue
+                pause()
+                continue
             m = reg[name]
             api = build_api(cfg)  # in case provider switched
             ip = _ensure_ip_for(reg, name, api)
             if not ip:
                 print("No IP available yet.")
-                pause(); continue
+                pause()
+                continue
 
             while True:
                 os.system("cls" if os.name == "nt" else "clear")
@@ -644,7 +650,8 @@ def menu():
                     print(f"Uploading resources from: {SERVER_RESOURCES_DIR}")
                     if not SERVER_RESOURCES_DIR.exists():
                         print(f"Expected server_resources at: {SERVER_RESOURCES_DIR}")
-                        pause(); continue
+                        pause()
+                        continue
                     priv, _ = ensure_ssh_key(cfg)
                     ok = SSHOps.configure_server(
                         host=ip,
@@ -692,7 +699,7 @@ def menu():
                         if meta_path.exists():
                             try:
                                 meta_path.unlink()
-                            except Exception:
+                            except (OSError, PermissionError, FileNotFoundError):
                                 pass
                         print("Deleted.")
                         pause()

@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives import serialization
 
 
 class SSHOps:
+    # pylint: disable=too-many-branches,too-many-statements,too-many-locals,too-many-nested-blocks,too-many-arguments,too-many-positional-arguments
     @staticmethod
     def random_password(n: int = 16) -> str:
         chars = string.ascii_letters + string.digits + "!@#$%^&*"
@@ -122,7 +123,7 @@ class SSHOps:
     def _sftp_put_dir(sftp: paramiko.SFTPClient, local_dir: Path, remote_dir: str):
         # Ensure the root exists
         SSHOps._mkdir_parents(sftp, remote_dir)
-        for root, dirs, files in os.walk(local_dir):
+        for root, files in os.walk(local_dir):
             # rel may contain Windows backslashes; force POSIX for remote
             rel = os.path.relpath(root, str(local_dir))
             rel_posix = "." if rel == "." else rel.replace("\\", "/")
@@ -137,6 +138,7 @@ class SSHOps:
 
     @staticmethod
     def configure_server(
+        # pylint: disable=too-many-return-statements
         host: str,
         user: str,
         private_key: str,
@@ -160,7 +162,7 @@ class SSHOps:
         # connect with retry (handles banner/connection resets)
         try:
             client = SSHOps._connect_retry(host, user, private_key, attempts=6, base_delay=2.0, max_delay=8.0)
-        except Exception as e:
+        except (SSHException, NoValidConnectionsError, OSError, ConnectionResetError) as e:
             print(f"Unable to establish SSH session: {e}")
             return False
 
@@ -168,7 +170,7 @@ class SSHOps:
             # Open SFTP (retry once if needed)
             try:
                 sftp = client.open_sftp()
-            except Exception:
+            except paramiko.sftp.SFTPError:
                 client.close()
                 client = SSHOps._connect_retry(host, user, private_key, attempts=4, base_delay=2.0, max_delay=6.0)
                 sftp = client.open_sftp()
@@ -209,7 +211,8 @@ class SSHOps:
             if includes.exists():
                 SSHOps._sftp_put_dir(sftp, includes, "/root/tf2-includes")
 
-            # --- Upload the copy helper BEFORE running setup (so setup can call it) ---
+            # Upload the copy helper BEFORE running setup (so setup can call it)
+            #pylint: disable=line-too-long
             copy_remote = "/root/tf2-copy.sh"
             copy_script = r"""#!/usr/bin/env bash
 set -e
@@ -270,7 +273,7 @@ container="tf2"
             try:
                 cmd_alias = r'''bash -lc 'PROFILE=/root/.bashrc; touch "$PROFILE"; grep -q "alias tf2apply=" "$PROFILE" || echo "alias tf2apply=\"bash /root/tf2-copy.sh\"" >> "$PROFILE"' '''
                 client.exec_command(cmd_alias)
-            except Exception:
+            except paramiko.ssh_exception.SSHException:
                 pass
 
             # --- Wait for apt/dpkg/cloud-init to finish to avoid lock races ---
@@ -313,7 +316,7 @@ exit 0
             if "__EXIT_CODE__" in marker:
                 try:
                     setup_rc = int(marker.split("__EXIT_CODE__")[-1])
-                except Exception:
+                except (ValueError, IndexError):
                     setup_rc = 1
 
             # If we did NOT inject the call into setup.sh (rare), run copy script now
@@ -324,7 +327,7 @@ exit 0
                 if "__COPY_RC__" in marker2:
                     try:
                         copy_rc = int(marker2.split("__COPY_RC__")[-1])
-                    except Exception:
+                    except (ValueError, IndexError):
                         copy_rc = 1
             else:
                 copy_rc = 0  # setup.sh already invoked it; the output is in the same log
@@ -337,7 +340,7 @@ exit 0
                     local_log = logs_dir / (log_filename or f"{host}-setup.log")
                     sftp.get(remote_log, str(local_log))
                     print(f"(Saved setup log to {local_log})")
-                except Exception as e:
+                except (OSError, IOError, FileNotFoundError) as e:
                     print(f"(Could not save setup log: {e})")
 
             # Quick verify: docker ps (non-fatal)
@@ -350,14 +353,14 @@ exit 0
             print(f"SSH error: {e}")
             try:
                 client.close()
-            except Exception:
+            except (OSError, SSHException):
                 pass
             return False
-        except Exception as e:
+        except (OSError, socket.error) as e:
             print(f"Unexpected error during configure_server: {e}")
             try:
                 client.close()
-            except Exception:
+            except (OSError, SSHException):
                 pass
             return False
 
@@ -374,7 +377,7 @@ exit 0
             rc = stdout.channel.recv_exit_status()
             client.close()
             return rc, out, err
-        except Exception as e:
+        except (SSHException) as e:
             return 1, "", f"(failed to run command) {e}"
 
     @staticmethod
@@ -386,11 +389,12 @@ exit 0
             out = stdout.read().decode("utf-8", errors="replace")
             client.close()
             return out
-        except Exception as e:
+        except (SSHException) as e:
             return f"(failed to get logs) {e}"
 
     @staticmethod
     def open_ssh_session(host: str, user: str, private_key_path: str):
+        #pylint: disable=consider-using-with
         """
         Launch an interactive ssh session in a NEW terminal window, OS-aware.
         Fallback: run in the current console (blocking) if no terminal emulator is found.
@@ -403,13 +407,13 @@ exit 0
                 # Use shell=True so START is interpreted by cmd.exe
                 subprocess.Popen(f'start "" cmd /k {ssh_cmd}', shell=True)
                 return
-            except Exception:
+            except (subprocess.CalledProcessError, OSError):
                 # Fallback to PowerShell
                 try:
                     subprocess.Popen(['powershell', '-NoProfile', '-Command',
                                       f'Start-Process cmd -ArgumentList \'/k {ssh_cmd}\''])
                     return
-                except Exception:
+                except (subprocess.CalledProcessError, OSError):
                     pass
 
         # macOS
@@ -418,7 +422,7 @@ exit 0
             try:
                 subprocess.Popen(["osascript", "-e", osa])
                 return
-            except Exception:
+            except (subprocess.CalledProcessError, OSError):
                 pass
 
         # Linux / others
@@ -434,7 +438,7 @@ exit 0
                 try:
                     subprocess.Popen(cmd)
                     return
-                except Exception:
+                except (subprocess.CalledProcessError, OSError):
                     continue
 
         # Fallback: open in current console (blocking)
