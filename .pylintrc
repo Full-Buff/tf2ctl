@@ -1,0 +1,21 @@
+[MASTER]
+init-hook='import sys, os; sys.path.insert(0, os.path.abspath("."))'
+ignore-patterns=^\.venv$,^venv$,^\.git$,^\.tox$
+
+[MESSAGES CONTROL]
+disable=
+    C0114, C0115, C0116,        # docstrings (keep simple for now)
+    R0903,                      # too-few-public-methods
+    R0801,                      # duplicate-code (common in provider adapters)
+    W1203,                      # logging-fstring-interpolation (we use prints)
+    R1705,                      #
+    R1724                       # no-else-continue
+
+[FORMAT]
+max-line-length=140
+
+[BASIC]
+good-names=i,j,k,ex,rc,ip,id,ok,cfg
+
+[REPORT]
+score=y

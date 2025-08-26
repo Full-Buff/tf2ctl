@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
+# pylint: disable=duplicate-code
 import time
-import requests
 from typing import Dict, Any, List, Optional
+import requests
 
 API = "https://api.digitalocean.com/v2"
 
@@ -12,6 +13,7 @@ class DOAPIError(Exception):
         self.payload = payload or {}
 
 class DigitalOceanAPI:
+    # pylint: disable=too-many-branches,too-many-statements,too-many-locals,too-many-nested-blocks,too-many-arguments,too-many-positional-arguments
     def __init__(self, token: str):
         self.token = token.strip()
 
@@ -25,7 +27,7 @@ class DigitalOceanAPI:
     def _handle_error(self, r: requests.Response):
         try:
             data = r.json()
-        except Exception:
+        except DOAPIError:
             data = {}
         msg = data.get("message") or data.get("error") or r.text
         raise DOAPIError(msg, status=r.status_code, payload=data)
@@ -123,6 +125,8 @@ class DigitalOceanAPI:
     # Droplets
     # --------------------------
     def create_server(self, name: str, region: str, size: str, ssh_key_id: str, public_key: str, tags: List[str]) -> Dict[str, Any]:
+        # public_key unused on DO; keep signature consistent with other providers
+        # pylint: disable=unused-argument
         payload = {
             "name": name,
             "region": region,

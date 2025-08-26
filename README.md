@@ -97,3 +97,33 @@ You'll see a summary with IPs and passwords. You can also view or export connect
 
 1. Delete all servers from the "Manage a server" or "Bulk actions" menus to avoid further cloud charges.
 2. Remove the local `./tf2ctl/` directory to wipe all saved configurations, keys, logs, and server records.
+
+---
+
+## Local Dev Info
+
+### Run this to get started:
+```bash
+make install-dev
+```
+Or without make:
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+pre-commit install
+```
+
+### To lint on demand run:
+```bash
+make lint
+```
+Or:
+```bash
+python -m pylint $(git ls-files '*.py')
+```
+
+### Hooks will auto-run on each commit. To run them against the whole repo manually:
+```bash
+pre-commit run --all-files
+```

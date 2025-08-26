@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pylint: disable=duplicate-code
 import time
 import secrets
 import string
@@ -14,6 +15,7 @@ class LinodeAPIError(Exception):
         self.payload = payload or {}
 
 class LinodeAPI:
+    # pylint: disable=too-many-branches,too-many-statements,too-many-locals,too-many-nested-blocks,too-many-arguments,too-many-positional-arguments
     """
     Minimal Linode v4 provider:
       - list_regions()
@@ -44,7 +46,7 @@ class LinodeAPI:
     def _handle_error(self, r: requests.Response):
         try:
             data = r.json()
-        except Exception:
+        except LinodeAPIError:
             data = {}
         msg = data.get("errors") or data.get("message") or r.text
         # errors can be a list of {"reason": "..."}
@@ -79,7 +81,7 @@ class LinodeAPI:
         Linode does NOT expose per-account instance limits via API;
         return None so the CLI skips capacity gating for this provider.
         """
-        return None  # See community reference; limits must be checked via support. 
+        return None  # See community reference; limits must be checked via support.
 
     # --------------------------
     # SSH Keys (Profile)
@@ -119,6 +121,8 @@ class LinodeAPI:
         Creates a Linode instance with Ubuntu 22.04 image.
         We pass `authorized_keys` with the *public key string* (works even if not in profile).
         """
+        # Linode creation uses authorized_keys not an ID from profile
+        # pylint: disable=unused-argument
         payload = {
             "label": name,
             "region": region,
