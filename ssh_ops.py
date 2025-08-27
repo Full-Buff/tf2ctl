@@ -41,6 +41,38 @@ class SSHOps:
         return priv_pem, pub_str
 
     @staticmethod
+    def is_port_open(host: str, port: int = 22, timeout: float = 3.0) -> bool:
+        """Check if a TCP port is open and accepting connections."""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        try:
+            result = sock.connect_ex((host, port))
+            sock.close()
+            return result == 0
+        except (socket.gaierror, socket.timeout, OSError):
+            return False
+        finally:
+            try:
+                sock.close()
+            except OSError:
+                pass
+
+    @staticmethod
+    def wait_for_port(host: str, port: int = 22, timeout: int = 300, check_interval: float = 5.0) -> bool:
+        """Wait for a port to become available."""
+        start = time.time()
+        print(f"Waiting for port {port} on {host} to become available...")
+        while time.time() - start < timeout:
+            if SSHOps.is_port_open(host, port, timeout=3.0):
+                print(f"Port {port} is now open on {host}")
+                # Give SSH daemon a moment to fully initialize after port opens
+                time.sleep(5)
+                return True
+            time.sleep(check_interval)
+        print(f"Timeout: Port {port} on {host} did not become available within {timeout} seconds")
+        return False
+
+    @staticmethod
     def _connect(host: str, user: str, private_key: str, timeout: int = 20) -> paramiko.SSHClient:
         key = paramiko.Ed25519Key.from_private_key(io.StringIO(private_key))
         client = paramiko.SSHClient()
@@ -53,21 +85,27 @@ class SSHOps:
         host: str,
         user: str,
         private_key: str,
-        attempts: int = 8,
-        base_delay: float = 2.0,
-        max_delay: float = 10.0,
+        attempts: int = 10,
+        base_delay: float = 3.0,
+        max_delay: float = 15.0,
     ) -> paramiko.SSHClient:
         """
         Robust connector that retries on transient failures like banner read errors,
-        connection resets, or port not ready.
+        connection resets, or port not ready. Always checks port availability first.
         """
         last_exc: Optional[Exception] = None
         for i in range(1, attempts + 1):
             try:
+                # Always check if port is open before attempting connection
+                if not SSHOps.is_port_open(host, 22, timeout=3.0):
+                    raise socket.error("Port 22 not open yet")
                 return SSHOps._connect(host, user, private_key, timeout=20)
             except (SSHException, NoValidConnectionsError, OSError, ConnectionResetError, socket.error) as e:
                 last_exc = e
-                time.sleep(min(max_delay, base_delay * i))
+                delay = min(max_delay, base_delay * i)
+                if i < attempts:
+                    print(f"SSH connection attempt {i}/{attempts} failed, retrying in {delay:.1f}s...")
+                time.sleep(delay)
         # Exhausted retries
         raise last_exc if last_exc else SSHException("Unknown SSH connect failure")
 
@@ -76,7 +114,13 @@ class SSHOps:
         """
         Wait until we can connect AND successfully run a trivial command.
         This avoids the "banner" reset race during sshd restarts.
+        Always waits for port first, regardless of provider.
         """
+        # First ensure port 22 is open
+        if not SSHOps.wait_for_port(host, 22, timeout=min(300, timeout)):
+            print(f"Port 22 never became available on {host}")
+            return False
+
         start = time.time()
         attempt = 0
         last_exc: Optional[Exception] = None
@@ -91,11 +135,12 @@ class SSHOps:
                 rc = stdout.channel.recv_exit_status()
                 client.close()
                 if rc == 0 and out == "READY":
+                    print("SSH is ready and accepting commands")
                     return True
             except (SSHException, NoValidConnectionsError, OSError, ConnectionResetError, socket.error) as e:
                 last_exc = e
-            # backoff
-            time.sleep(min(10, 1 + attempt * 1.5))
+            # Simple fixed backoff
+            time.sleep(5)
         if last_exc:
             print(f"SSH not ready within timeout. Last error: {last_exc}")
         else:
@@ -162,7 +207,7 @@ class SSHOps:
 
         # connect with retry (handles banner/connection resets)
         try:
-            client = SSHOps._connect_retry(host, user, private_key, attempts=6, base_delay=2.0, max_delay=8.0)
+            client = SSHOps._connect_retry(host, user, private_key, attempts=10, base_delay=3.0, max_delay=15.0)
         except (SSHException, NoValidConnectionsError, OSError, ConnectionResetError) as e:
             print(f"Unable to establish SSH session: {e}")
             return False
@@ -173,7 +218,7 @@ class SSHOps:
                 sftp = client.open_sftp()
             except paramiko.sftp.SFTPError:
                 client.close()
-                client = SSHOps._connect_retry(host, user, private_key, attempts=4, base_delay=2.0, max_delay=6.0)
+                client = SSHOps._connect_retry(host, user, private_key, attempts=6, base_delay=3.0, max_delay=10.0)
                 sftp = client.open_sftp()
 
             # Upload setup.sh with robust decoding/encoding
@@ -371,7 +416,7 @@ exit 0
         Run a single command over SSH, return (rc, stdout, stderr).
         """
         try:
-            client = SSHOps._connect_retry(host, user, private_key, attempts=4, base_delay=1.5, max_delay=6.0)
+            client = SSHOps._connect_retry(host, user, private_key, attempts=6, base_delay=3.0, max_delay=10.0)
             _, stdout, stderr = client.exec_command(command, get_pty=get_pty)
             out = stdout.read().decode("utf-8", errors="replace")
             err = stderr.read().decode("utf-8", errors="replace")
@@ -384,7 +429,7 @@ exit 0
     @staticmethod
     def get_container_logs(host: str, user: str, private_key: str, container: str = "tf2", tail: int = 200) -> str:
         try:
-            client = SSHOps._connect_retry(host, user, private_key, attempts=4, base_delay=1.5, max_delay=6.0)
+            client = SSHOps._connect_retry(host, user, private_key, attempts=6, base_delay=3.0, max_delay=10.0)
             cmd = f"docker logs --tail {tail} {container} 2>&1 || true"
             _, stdout, _ = client.exec_command(cmd)
             out = stdout.read().decode("utf-8", errors="replace")
