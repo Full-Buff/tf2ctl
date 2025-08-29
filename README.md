@@ -17,6 +17,13 @@ This is mainly geared toward competitive play, but can be easily modified as nee
 
 ---
 
+### Cloud Providers Supported
+- [DigitalOcean](https://www.digitalocean.com/)
+- [Linode](https://www.linode.com/)
+- [Vultr](https://www.vultr.com/)
+
+---
+
 ## Quick Start
 
 ### 1. Requirements
@@ -69,7 +76,7 @@ python cli.py
 
 In the main menu, select "Configure provider / API token / SSH key":
 
-1. Pick a provider (DigitalOcean or Linode).
+1. Pick a provider.
 2. Paste your provider's API token when prompted. It will be stored locally in `.tf2ctl/config.json`.
 3. Generate a new Ed25519 SSH key (recommended) or supply a path to your own. Keys are stored under `.tf2ctl/`.
 
