@@ -33,8 +33,31 @@ class VultrAPI:
         try:
             data = r.json()
         except Exception:  # pylint: disable=broad-exception-caught
-            data = {}
-        msg = data.get("error", {}).get("message") or data.get("message") or r.text
+            data = None
+
+        # Handle different error response formats
+        msg = r.text  # Default to raw response text
+
+        if isinstance(data, dict):
+            # Try to extract error message from various possible structures
+            if "error" in data:
+                if isinstance(data["error"], dict):
+                    msg = data["error"].get("message", msg)
+                elif isinstance(data["error"], str):
+                    msg = data["error"]
+            elif "message" in data:
+                msg = data["message"]
+            elif "errors" in data:
+                # Handle array of errors
+                if isinstance(data["errors"], list) and data["errors"]:
+                    first_error = data["errors"][0]
+                    if isinstance(first_error, dict):
+                        msg = first_error.get("message", first_error.get("detail", msg))
+                    else:
+                        msg = str(first_error)
+        elif isinstance(data, str):
+            msg = data
+
         raise VultrAPIError(f"{r.status_code} {r.request.method} {r.request.url} -> {msg}")
 
     # -------------- provider facade --------------
@@ -73,20 +96,35 @@ class VultrAPI:
         """
         Return existing key ID if the exact public_key exists, otherwise create and return new ID.
         """
-        # List
+        # List existing keys
         r = requests.get(f"{self.base}/ssh-keys", headers=self._headers(), timeout=30)
         if not r.ok:
             self._handle_error(r)
-        for item in r.json().get("ssh_keys", []):
-            if item.get("ssh_key") == public_key:
-                return item.get("id")
 
-        # Create
-        payload = {"name": name, "ssh_key": public_key}
+        # Check if key already exists
+        for item in r.json().get("ssh_keys", []):
+            if item.get("ssh_key", "").strip() == public_key.strip():
+                key_id = item.get("id")
+                print(f"Found existing SSH key with ID: {key_id}")
+                return key_id
+
+        # Create new key
+        payload = {"name": name, "ssh_key": public_key.strip()}
         r = requests.post(f"{self.base}/ssh-keys", json=payload, headers=self._headers(), timeout=30)
         if not r.ok:
             self._handle_error(r)
-        return r.json().get("ssh_key", {}).get("id")
+
+        response_data = r.json()
+        # Handle different response structures
+        if "ssh_key" in response_data:
+            key_id = response_data["ssh_key"].get("id")
+        elif "id" in response_data:
+            key_id = response_data["id"]
+        else:
+            raise VultrAPIError(f"Unexpected response structure when creating SSH key: {response_data}")
+
+        print(f"Created new SSH key with ID: {key_id}")
+        return key_id
 
     # --- Instances ---
     # pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -108,9 +146,13 @@ class VultrAPI:
             "plan": size,
             "os_id": 2284,  # Ubuntu 24.04 LTS x64
             "label": name,
-            "ssh_key_ids": [ssh_key_id],
+            "hostname": name,
+            "sshkey_id": [ssh_key_id] if ssh_key_id else [],
             "tags": tags or [],
             "enable_ipv6": True,
+            "backups": "disabled",
+            "ddos_protection": False,
+            "activation_email": False,
         }
         r = requests.post(f"{self.base}/instances", json=payload, headers=self._headers(), timeout=60)
         if not r.ok:
@@ -133,7 +175,7 @@ class VultrAPI:
             inst = self.get_instance(instance_id)
             status = inst.get("status")
             ip = inst.get("main_ip")
-            if status == "active" and ip:
+            if status == "active" and ip and ip != "0.0.0.0":
                 return {"ip": ip, "region": inst.get("region")}
             time.sleep(poll)
         raise VultrAPIError(f"Timed out waiting for instance {instance_id} to become active and get IP")

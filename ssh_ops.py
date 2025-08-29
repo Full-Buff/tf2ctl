@@ -66,7 +66,8 @@ class SSHOps:
             if SSHOps.is_port_open(host, port, timeout=3.0):
                 print(f"Port {port} is now open on {host}")
                 # Give SSH daemon a moment to fully initialize after port opens
-                time.sleep(5)
+                print("Waiting for SSH daemon to stabilize (10 seconds)...")
+                time.sleep(10)
                 return True
             time.sleep(check_interval)
         print(f"Timeout: Port {port} on {host} did not become available within {timeout} seconds")
@@ -85,9 +86,9 @@ class SSHOps:
         host: str,
         user: str,
         private_key: str,
-        attempts: int = 10,
+        attempts: int = 8,
         base_delay: float = 3.0,
-        max_delay: float = 15.0,
+        max_delay: float = 10.0,
     ) -> paramiko.SSHClient:
         """
         Robust connector that retries on transient failures like banner read errors,
@@ -99,6 +100,7 @@ class SSHOps:
                 # Always check if port is open before attempting connection
                 if not SSHOps.is_port_open(host, 22, timeout=3.0):
                     raise socket.error("Port 22 not open yet")
+                # Try to connect
                 return SSHOps._connect(host, user, private_key, timeout=20)
             except (SSHException, NoValidConnectionsError, OSError, ConnectionResetError, socket.error) as e:
                 last_exc = e
@@ -116,7 +118,7 @@ class SSHOps:
         This avoids the "banner" reset race during sshd restarts.
         Always waits for port first, regardless of provider.
         """
-        # First ensure port 22 is open
+        # First ensure port 22 is open (includes stabilization delay)
         if not SSHOps.wait_for_port(host, 22, timeout=min(300, timeout)):
             print(f"Port 22 never became available on {host}")
             return False
@@ -124,12 +126,14 @@ class SSHOps:
         start = time.time()
         attempt = 0
         last_exc: Optional[Exception] = None
-        while time.time() - start < timeout:
+        max_attempts = 20
+
+        while time.time() - start < timeout and attempt < max_attempts:
             attempt += 1
             try:
                 client = SSHOps._connect(host, user, private_key, timeout=15)
                 # Prove the session can actually execute a command
-                _, stdout, stderr = client.exec_command("echo READY", get_pty=False)
+                _, stdout, stderr = client.exec_command("echo READY", get_pty=False, timeout=10)
                 out = stdout.read().decode("utf-8", errors="ignore").strip()
                 _ = stderr.read()
                 rc = stdout.channel.recv_exit_status()
@@ -137,7 +141,7 @@ class SSHOps:
                 if rc == 0 and out == "READY":
                     print("SSH is ready and accepting commands")
                     return True
-            except (SSHException, NoValidConnectionsError, OSError, ConnectionResetError, socket.error) as e:
+            except (SSHException, NoValidConnectionsError, OSError, ConnectionResetError, socket.error, socket.timeout) as e:
                 last_exc = e
             # Simple fixed backoff
             time.sleep(5)
@@ -207,7 +211,7 @@ class SSHOps:
 
         # connect with retry (handles banner/connection resets)
         try:
-            client = SSHOps._connect_retry(host, user, private_key, attempts=10, base_delay=3.0, max_delay=15.0)
+            client = SSHOps._connect_retry(host, user, private_key, attempts=8, base_delay=3.0, max_delay=10.0)
         except (SSHException, NoValidConnectionsError, OSError, ConnectionResetError) as e:
             print(f"Unable to establish SSH session: {e}")
             return False
@@ -218,6 +222,7 @@ class SSHOps:
                 sftp = client.open_sftp()
             except paramiko.sftp.SFTPError:
                 client.close()
+                time.sleep(5)
                 client = SSHOps._connect_retry(host, user, private_key, attempts=6, base_delay=3.0, max_delay=10.0)
                 sftp = client.open_sftp()
 
