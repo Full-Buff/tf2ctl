@@ -13,10 +13,12 @@ from json import JSONDecodeError
 try:
     from tf2ctl.do_api import DigitalOceanAPI, DOAPIError
     from tf2ctl.linode_api import LinodeAPI, LinodeAPIError
+    from tf2ctl.vultr_api import VultrAPI, VultrAPIError
     from tf2ctl.ssh_ops import SSHOps
 except ImportError:
     from do_api import DigitalOceanAPI, DOAPIError
     from linode_api import LinodeAPI, LinodeAPIError
+    from vultr_api import VultrAPI, VultrAPIError
     from ssh_ops import SSHOps
 
 # Treat this folder as the project root
@@ -40,6 +42,7 @@ STV_PORT = 27020
 SUPPORTED_PROVIDERS = {
     "digitalocean": "DigitalOcean",
     "linode": "Linode",
+    "vultr": "Vultr",
 }
 
 # ---------------------------
@@ -57,6 +60,7 @@ def load_config() -> dict:
         "provider": "digitalocean",
         "do_token": "",
         "linode_token": "",
+        "vultr_token": "",
         "ssh_private_key": "",
         "ssh_public_key": "",
         "ssh_private_key_path": "",
@@ -112,7 +116,12 @@ def select_provider(cfg: dict) -> str:
     return cfg.get("provider", "digitalocean")
 
 def ensure_token_for_provider(cfg: dict, provider: str) -> str:
-    key = "do_token" if provider == "digitalocean" else "linode_token"
+    key_map = {
+        "digitalocean": "do_token",
+        "linode": "linode_token",
+        "vultr": "vultr_token",
+    }
+    key = key_map.get(provider, "do_token")
     if cfg.get(key):
         return cfg[key]
     print(f"\nNo API token set for {SUPPORTED_PROVIDERS.get(provider, provider)}.")
@@ -128,8 +137,9 @@ def build_api(cfg: dict):
         return DigitalOceanAPI(token)
     if provider == "linode":
         return LinodeAPI(token)
-    else:
-        raise RuntimeError(f"Unsupported provider '{provider}'")
+    if provider == "vultr":
+        return VultrAPI(token)
+    raise RuntimeError(f"Unsupported provider '{provider}'")
 
 def _harden_private_key_permissions(priv_path: Path):
     """
@@ -186,17 +196,17 @@ def ensure_ssh_key(cfg: dict) -> tuple[str, str]:
         _write_key_files(cfg)
         print("Generated and stored a new SSH keypair.")
         return priv, pub
-    else:
-        priv_path = ask("Path to your PRIVATE key (PEM/OpenSSH)")
-        pub_path  = ask("Path to your PUBLIC key (.pub)")
-        priv = Path(priv_path).read_text(encoding="utf-8")
-        pub  = Path(pub_path).read_text(encoding="utf-8")
-        cfg["ssh_private_key"] = priv
-        cfg["ssh_public_key"]  = pub
-        save_config(cfg)
-        _write_key_files(cfg)
-        print("Stored your SSH keypair.")
-        return priv, pub
+
+    priv_path = ask("Path to your PRIVATE key (PEM/OpenSSH)")
+    pub_path  = ask("Path to your PUBLIC key (.pub)")
+    priv = Path(priv_path).read_text(encoding="utf-8")
+    pub  = Path(pub_path).read_text(encoding="utf-8")
+    cfg["ssh_private_key"] = priv
+    cfg["ssh_public_key"]  = pub
+    save_config(cfg)
+    _write_key_files(cfg)
+    print("Stored your SSH keypair.")
+    return priv, pub
 
 def pick_region(api) -> str:
     regions = api.list_regions()
@@ -305,7 +315,7 @@ def _bulk_loop(reg: Dict[str, Any], api, cfg: dict):
                 if not ip:
                     print(f"{name}: no IP yet, skipping.")
                     continue
-                rc, out, err = SSHOps.run_command(ip, "root", priv, "docker restart tf2")
+                rc, _out, err = SSHOps.run_command(ip, "root", priv, "docker restart tf2")
                 print(f"{name}: {'ok' if rc == 0 else 'failed'}")
                 if rc != 0:
                     print(err)
@@ -336,7 +346,7 @@ def _bulk_loop(reg: Dict[str, Any], api, cfg: dict):
                 try:
                     api.delete_server(meta["id"])
                     print(f"Deleted {name}")
-                except (DOAPIError, LinodeAPIError) as exc:
+                except (DOAPIError, LinodeAPIError, VultrAPIError) as exc:
                     print(f"Failed to delete {name}: {exc}")
                 reg.pop(name, None)
                 meta_path = CONFIG_DIR / f"{meta.get('id','')}.json"
@@ -429,7 +439,7 @@ def menu():
             try:
                 key_id = api.ensure_ssh_key(pub)
                 print(f"SSH key registered with {SUPPORTED_PROVIDERS.get(prov)} (id: {key_id}).")
-            except (DOAPIError, LinodeAPIError) as e:
+            except (DOAPIError, LinodeAPIError, VultrAPIError) as e:
                 print(f"(warning) could not register SSH key with provider: {e}")
             print(f"Config stored at: {CONFIG_PATH}")
             print(f"server_resources path: {SERVER_RESOURCES_DIR}")
@@ -458,7 +468,7 @@ def menu():
             remaining = None
             try:
                 remaining = api.capacity_remaining()
-            except (DOAPIError, LinodeAPIError):
+            except (DOAPIError, LinodeAPIError, VultrAPIError):
                 remaining = None
 
             if remaining is not None and count_req > remaining:
@@ -467,14 +477,13 @@ def menu():
                     print("Tip: delete old instances or request a limit increase from your provider.")
                     pause()
                     continue
-                else:
-                    print(f"\nRequested {count_req} servers but your account can create only {remaining} more right now.")
-                    use = ask(f"Create {remaining} servers instead?", "yes")
-                    if use.lower() != "yes":
-                        print("Cancelled.")
-                        pause()
-                        continue
-                    count = remaining
+                print(f"\nRequested {count_req} servers but your account can create only {remaining} more right now.")
+                use = ask(f"Create {remaining} servers instead?", "yes")
+                if use.lower() != "yes":
+                    print("Cancelled.")
+                    pause()
+                    continue
+                count = remaining
             else:
                 count = count_req
 
@@ -499,11 +508,11 @@ def menu():
                         name=n,
                         region=region,
                         size=size,
-                        ssh_key_id=api.ensure_ssh_key(pub),  # DO uses id; Linode ignores or stores
+                        ssh_key_id=api.ensure_ssh_key(pub),
                         public_key=pub,
                         tags=[DEFAULT_TAG, f"tf2-{n}"]
                     )
-                except (DOAPIError, LinodeAPIError) as e:
+                except (DOAPIError, LinodeAPIError, VultrAPIError) as e:
                     print(f"  -> create failed: {e}")
                     # If message indicates limit/quota, stop bulk creation
                     msg = (str(e) or "").lower()
@@ -540,7 +549,7 @@ def menu():
                 save_registry(reg)
                 created.append(n)
 
-                time.sleep(1.0)  # <-- gentle global rate limit between creates
+                time.sleep(1.0)
 
             if not created:
                 print("\nNo servers were created.")
