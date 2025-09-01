@@ -464,6 +464,12 @@ def menu():
             size   = pick_size(api)
             start_map = ask("Start map for all servers", "cp_badlands")
 
+            # Ask for API keys for demos.tf and logs.tf
+            print("\n--- Optional API Keys for Competitive Features ---")
+            print("Leave blank to skip automatic demo/log uploads")
+            demos_tf_apikey = ask("demos.tf API key (optional)", "")
+            logs_tf_apikey = ask("logs.tf API key (optional)", "")
+
             # ---------- Provider capacity (may be None if provider doesn't expose it) ----------
             remaining = None
             try:
@@ -536,7 +542,9 @@ def menu():
                     "rcon_password": SSHOps.random_password(16),
                     "sv_password": SSHOps.random_password(12),
                     "stv_password": "stv",
-                    "start_map": start_map
+                    "start_map": start_map,
+                    "demos_tf_apikey": demos_tf_apikey,
+                    "logs_tf_apikey": logs_tf_apikey
                 }
                 reg[n] = meta
                 (CONFIG_DIR / f"{sid}.json").write_text(json.dumps({
@@ -544,7 +552,9 @@ def menu():
                     "rcon_password": meta["rcon_password"],
                     "sv_password": meta["sv_password"],
                     "stv_password": meta["stv_password"],
-                    "start_map": meta["start_map"]
+                    "start_map": meta["start_map"],
+                    "demos_tf_apikey": meta["demos_tf_apikey"],
+                    "logs_tf_apikey": meta["logs_tf_apikey"]
                 }, indent=2))
                 save_registry(reg)
                 created.append(n)
@@ -587,6 +597,8 @@ def menu():
                         "SERVER_PASSWORD": m["sv_password"],
                         "START_MAP": m["start_map"],
                         "STV_PASSWORD": m["stv_password"],
+                        "DEMOS_TF_APIKEY": m["demos_tf_apikey"],
+                        "LOGS_TF_APIKEY": m["logs_tf_apikey"],
                     },
                     logs_dir=LOGS_DIR,
                     log_filename=f"{n}-{m['id']}.log"
@@ -673,6 +685,8 @@ def menu():
                             "SERVER_PASSWORD": m["sv_password"],
                             "START_MAP": m["start_map"],
                             "STV_PASSWORD": m["stv_password"],
+                            "DEMOS_TF_APIKEY": m.get("demos_tf_apikey", ""),
+                            "LOGS_TF_APIKEY": m.get("logs_tf_apikey", ""),
                         },
                         logs_dir=LOGS_DIR,
                         log_filename=f"{name}-{m['id']}.log"
