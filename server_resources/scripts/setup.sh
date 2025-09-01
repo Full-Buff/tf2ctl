@@ -40,6 +40,8 @@ RCON_PASSWORD="RCON_PASSWORD_REPLACE"
 SERVER_PASSWORD="SERVER_PASSWORD_REPLACE"
 STV_PASSWORD="STV_PASSWORD_REPLACE"
 START_MAP="START_MAP_REPLACE"
+DEMOS_TF_APIKEY="DEMOS_TF_APIKEY_REPLACE"
+LOGS_TF_APIKEY="LOGS_TF_APIKEY_REPLACE"
 
 echo "=== Server Configuration ==="
 echo "SERVER_HOSTNAME: ${SERVER_HOSTNAME}"
@@ -47,6 +49,8 @@ echo "START_MAP: ${START_MAP}"
 echo "SERVER_PASSWORD: $([ -n "$SERVER_PASSWORD" ] && echo '[SET]' || echo '[EMPTY]')"
 echo "STV_PASSWORD: ${STV_PASSWORD}"
 echo "RCON_PASSWORD: [REDACTED]"
+echo "DEMOS_TF_APIKEY: $([ -n "$DEMOS_TF_APIKEY" ] && echo '[SET]' || echo '[EMPTY]')"
+echo "LOGS_TF_APIKEY: $([ -n "$LOGS_TF_APIKEY" ] && echo '[SET]' || echo '[EMPTY]')"
 echo "=============================="
 
 # =============================================================================
@@ -80,13 +84,13 @@ echo "Firewall configured"
 # =============================================================================
 # This section is for users who want to download additional files from remote sources
 # Examples: custom maps, plugins, configs from GitHub, fastDL, etc.
-# 
+#
 # EXAMPLE - Uncomment and modify as needed:
 #
 # echo "Downloading custom maps..."
 # cd /home/tf2server/tf2-server/maps
 # wget -q https://example.com/path/to/custom_map.bsp
-# 
+#
 # echo "Downloading custom plugins..."
 # cd /home/tf2server/tf2-server/addons/sourcemod/plugins
 # wget -q https://github.com/user/plugin/releases/latest/download/plugin.smx
@@ -121,7 +125,7 @@ if [ "$(docker ps -aq -f name=tf2)" ]; then
     docker rm tf2 2>/dev/null || true
 fi
 
-# Start the TF2 server container
+# Start the TF2 server container with hybrid approach (env vars + command line args)
 echo "Launching TF2 server container..."
 docker run -d \
     --name tf2 \
@@ -135,8 +139,18 @@ docker run -d \
     -e "SERVER_PASSWORD=${SERVER_PASSWORD}" \
     -e "STV_NAME=${SERVER_HOSTNAME} TV" \
     -e "STV_PASSWORD=${STV_PASSWORD}" \
+    -e "DEMOS_TF_APIKEY=${DEMOS_TF_APIKEY}" \
+    -e "LOGS_TF_APIKEY=${LOGS_TF_APIKEY}" \
     -e "ENABLE_FAKE_IP=1" \
-    ghcr.io/melkortf/tf2-competitive:latest +map "${START_MAP}"
+    ghcr.io/melkortf/tf2-competitive:latest \
+    +map "${START_MAP}" \
+    +rcon_password "${RCON_PASSWORD}" \
+    +hostname "${SERVER_HOSTNAME}" \
+    +sv_password "${SERVER_PASSWORD}" \
+    +tv_name "${SERVER_HOSTNAME} TV" \
+    +tv_password "${STV_PASSWORD}" \
+    +sm_demostf_apikey "${DEMOS_TF_APIKEY}" \
+    +logstf_apikey "${LOGS_TF_APIKEY}"
 
 # Wait for container to start
 echo "Waiting for container to start..."
@@ -145,10 +159,10 @@ sleep 15
 # Verify container is running
 if [ "$(docker ps -q -f name=tf2)" ]; then
     echo "✅ TF2 server container started successfully!"
-    
+
     # Get server IP
     SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || echo "unknown")
-    
+
     echo ""
     echo "=== CONNECTION INFORMATION ==="
     echo "Game Server: connect ${SERVER_IP}:27015"
